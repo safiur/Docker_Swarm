@@ -1,0 +1,1110 @@
+
+Setup Docker registry using given below link:
+ 
+https://coderwall.com/p/dtwc1q/insecure-and-self-signed-private-docker-registry-with-boot2docker
+ 
+/usr/lib/systemd/system/docker.service
+ 
+systemctl stop firewalld
+systemctl disable  firewalld
+ 
+10.135.82.207
+ 
+Remove all proxies from machine , before you test the registry & image publishing
+unset http_proxy
+unset https_proxy
+ 
+& unset proxies  from  file /etc/systemd/system/docker.service.d/http-proxy.conf
+ 
+ 
+vi /etc/yum.repos.d/docker.repo
+[dockerrepo]
+name=Docker Repository
+baseurl=https://yum.dockerproject.org/repo/main/centos/7
+enabled=1
+gpgcheck=1
+gpgkey=https://yum.dockerproject.org/gpg
+ 
+ 
+export http_proxy="http://10.140.177.48:8678"
+export https_proxy="http://10.140.177.48:8678"
+ 
+ 
+to enable docker work using proxy
+ 
+mkdir /etc/systemd/system/docker.service.d
+ 
+vi /etc/systemd/system/docker.service.d/http-proxy.conf                ### restart docker daemon
+[Service]
+Environment="HTTP_PROXY=http://10.140.177.48:8678/"
+Environment="HTTPS_PROXY=http://10.140.177.48:8678/"
+vi /etc/sysconfig/docker                               ### restart docker daemon
+export http_proxy="http://10.140.177.48:8678"
+export https_proxy="http://10.140.177.48:8678"
+ 
+ 
+ 
+yum install docker-engine  -y
+ 
+systemctl daemon-reload   ### mandatory  for  config  changes
+###verify changes
+ 
+systemctl show docker --property Environment
+ 
+Environment=HTTP_PROXY=http://10.135.80.164:8678/ HTTPS_PROXY=http://10.135.80.164:8678/   ###must be the output
+ 
+ 
+systemctl restart docker
+ 
+docker search tomcat  ##should work
+ 
+ 
+docker stop registry && docker rm -v registry   #### to stop registry service
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+ 
+ 
+getenforce  0
+in pwd
+ 
+vi /etc/pki/tls/openssl.cnf
+[ v3_ca ]
+subjectAltName = IP:10.135.81.2   #### floating ip of registry server
+ 
+create certs after this step only  /etc/pki/tls/openssl.cnf
+ 
+ 
+ 
+ 
+ 
+  vi /etc/systemd/system/docker.service.d/http-proxy.conf   ###add docker http proxy
+  systemctl daemon-reload
+ 
+systemctl  start docker
+  systemctl daemon-reload
+ 
+mkdir  auth
+  mkdir -p certs
+ 
+  openssl req -newkey rsa:4096 -nodes -sha256 -keyout certs/domain.key  -x509 -days 365 -out certs/domain.crt   ## create certs
+ 
+openssl req -newkey rsa:4096 -nodes -sha256 -keyout certs/domain.key  -x509 -days 365 -out certs/domain.crt
+Generating a 4096 bit RSA private key
+............................................................................................................................................................................................................................................................................................................................................................................................................................................++
+.............................................++
+writing new private key to 'certs/domain.key'
+-----
+You are about to be asked to enter information that will be incorporated
+into your certificate request.
+What you are about to enter is what is called a Distinguished Name or a DN.
+There are quite a few fields but you can leave some blank
+For some fields there will be a default value,
+If you enter '.', the field will be left blank.
+-----
+Country Name (2 letter code) [XX]:IN
+State or Province Name (full name) []:HR
+Locality Name (eg, city) [Default City]:GGN
+Organization Name (eg, company) [Default Company Ltd]:JRL
+Organizational Unit Name (eg, section) []:HR
+Common Name (eg, your name or your server's hostname) []:10.135.81.2:5000
+Email Address []:sharma@ril.com
+ 
+ 
+ 
+now in same dir
+  docker run --entrypoint htpasswd registry:2 -Bbn test test > auth/htpasswd
+ 
+remove the docker proxy in file   /etc/systemd/system/docker.service.d/http-proxy.conf after registry download in above command
+systemctl daemon-reload
+docker stop registry && docker rm -v registry
+systemctl  restart docker
+ 
+ 
+unset http_proxy
+unset https_proxy
+ 
+### copy one by one in a single line
+ 
+    docker run -d -p 5000:5000 --restart=always --name registry   -v `pwd`/auth:/auth   -e "REGISTRY_AUTH=htpasswd"   -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm"    -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd   -v `pwd`/certs:/certs   -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt   -e  REGISTRY_HTTP_TLS_KEY=/certs/domain.key   registry:2
+ 
+ 
+ 
+yum install telnet -y
+ 
+   telnet 0 5000
+ 
+### from remote machine after adding the cert in   /etc/docker/certs.d/10.135.82.207\:5000/ca.crt
+docker login  10.135.82.207:5000
+ 
+ 
+do   below on client servers :
+unset https_proxy
+unset http_proxy
+ 
+&
+ 
+remove the docker proxy in file   /etc/systemd/system/docker.service.d/http-proxy.conf after registry download in above command
+systemctl daemon-reload
+docker stop registry && docker rm -v registry
+systemctl  restart docker
+ 
+#########################################################################################################################################
+cleint side &
+ 
+ 
+[root@dockerimg certs.d]# pwd
+/etc/docker/certs.d
+[root@dockerimg certs.d]# ls -ltr
+total 4
+drwxr-xr-x 2 root root 4096 Apr 13 18:38 10.140.178.252:5000
+[root@dockerimg certs.d]# cd 10.140.178.252\:5000/
+[root@dockerimg 10.140.178.252:5000]# ls -ltr
+total 4
+-rw-r--r-- 1 root root 2159 Apr 13 18:38 ca.crt  ### keep registry certificate file here
+[root@dockerimg 10.140.178.252:5000]#
+ 
+ 
+### on client keep commented, on server keep this setting
+[root@dockerimg 10.140.178.252:5000]# cat /etc/pki/tls/openssl.cnf | grep 10.140
+#subjectAltName = IP:10.140.178.252
+[root@dockerimg 10.140.178.252:5000]#
+ 
+ 
+ 
+adding certificate for a registry
+ 
+[root@dockt ~]# mkdir -p /etc/docker/certs.d/
+[root@dockt ~]# cd /etc/docker/certs.d/
+[root@dockt certs.d]# mkdir 10.140.178.252:5000  ### mkdir with registry ip 10.140.178.252
+[root@dockt certs.d]# cd 10.140.178.252:5000
+[root@dockt 10.140.178.252:5000]# vi  ca.crt  ## copy cert in this file
+ 
+adding repository credentials
+cat /root/.docker/config.json
+{
+        "auths": {
+                "10.140.178.252:5000": {
+                        "auth": "dGVzdDp0ZXN0"
+                }
+        }
+}
+ 
+ 
+#################################################################################################################################
+ 
+ 
+on docker cleint comes the error Forbidden  , because of http proxy
+ 
+[root@dockerimg ~]# docker login 10.140.178.252:5000
+Username (test): test
+Password:
+Error response from daemon: Get https://10.140.178.252:5000/v1/users/: Forbidden
+[root@dockerimg ~]#
+ 
+cat /etc/docker/daemon.json
+{ "insecure-registries":["10.140.225.58:5000"] }
+ 
+ 
+ 
+##########################################################################################################################
+ 
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+ 
+ls -ltr /etc/docker/certs.d/10.135.80.237:5000/ca.crt    ### copy  /certs/domain.crt , change 10.135.80.237 ip to ur resgitry server
+ 
+ 
+ 
+telnet 10.135.80.237  5000
+ 
+dwonload an image using /etc/systemd/system/docker.service.d/http-proxy.conf  proxy
+systemctl restart   docker
+systemctl show docker --property Environment
+systemctl daemon-reload
+docker pull hello-world
+ 
+docker tag hello-world  10.135.80.237:5000/hello-world
+docker images
+ 
+### now remove  docker proxy for http & https in file /etc/systemd/system/docker.service.d/http-proxy.conf
+ 
+systemctl daemon-reload
+systemctl restart   docker         ### must restart docker before  upload/download images
+systemctl show docker --property Environment   ### should be empty
+systemctl restart   docker  ### before log in restart docker
+docker login 10.135.80.237:5000
+ 
+ 
+########################################################################################################################################################
+ 
+ 
+You need to tag your image correctly first with your registryhost:
+ 
+docker tag [OPTIONS] IMAGE[:TAG] [REGISTRYHOST/][USERNAME/]NAME[:TAG]
+Then docker push using that same tag.
+ 
+docker push NAME[:TAG]
+Example:
+ 
+docker tag myImage myRegistry.com/myImage
+docker push myRegistry.com/myImage
+ 
+docker login 10.135.83.139:5000   #### test  registry login  10.135.83.139:5000
+docker tag dd942f250075 10.135.83.139:5000/myimage  #### tag your image ID dd942f250075  with   registry  & name  10.135.83.139:5000/myimage
+docker push 10.135.83.139:5000/myimage   ### push your  image to registry 10.135.83.139:5000
+ 
+ 
+docker login 10.135.83.139:5000  ###
+docker pull 10.135.83.139:5000/myimage   ### pull image
+docker run -ti ubuntu /bin/bash
+ 
+docker run -p 12080:12080 -ti 10.135.83.139:5000/myimage /bin/bash   ### start image with port mapping
+ 
+################################################################################################################################################################
+docker pull ubuntu
+ 
+docker images
+ 
+docker ps -a
+docker ps
+ 
+docker run -ti ubuntu /bin/bash
+ 
+docker search centos
+docker pull centos
+docker run -ti centos  /bin/bash
+ 
+###container ID  24a9bec46c8e  is having name  lonely_borg
+ 
+ 
+docker cp /tmp/server-jre-7u76-linux-x64.tar.gz  lonely_borg:/server-jre-7u76-linux-x64.tar.gz
+ 
+logs  /var/lib/docker/
+ 
+ 
+##########################################################################################################################################################
+ 
+docker run  -p 8080:80 ubuntu
+docker run -p 80:8080 -ti ubuntu /bin/bash   ### with port mapping
+ 
+docker run -p  80:8080 -d ubuntu
+ 
+ 
+docker run -p  90:8090 -d ubuntu    ### local port 90  mapped with container port 8090
+ 
+ 
+ 
+https://blog.docker.com/2015/04/tips-for-deploying-nginx-official-image-with-docker/
+ 
+docker run --name mynginx2 -v /var/www:/usr/share/nginx/html:ro -v /var/nginx/conf:/etc/nginx:ro -P -d nginx
+162a4212671039225e26398a9ab65c3332d4074d2bd31c480fbd35eedbc66039
+ 
+ 
+#######################################################################################################################################################
+upload an image to a repo (public repo)
+ 
+start an image
+ 
+docker start 24a9bec46c8e
+docker attach 24a9bec46c8e   ### attach an image
+press  Ctrl-p + Ctrl-q  inside docker container running image & this will leave image running , now comiit the changes
+ 
+docker commit  24a9bec46c8e tomcatubuntu     ### commit your changes , 24a9bec46c8e  is  CONTAINER ID
+docker images    ## now list local images
+ 
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+tomcatubuntu        latest              1ed833ad958d        5 minutes ago       733.1 MB
+ 
+ 
+docker images  ### get image id
+docker tag 1ed833ad958d   sharmasudhanshu/tomcatubuntu:latest    #### tag image  with label altest,  1ed833ad958d is the image id
+docker images   #### recheck image
+ 
+docker login --username=sharmasudhanshu --email=sharmasudhanshu@hotmail.com   ### login to docker hub acoount
+ 
+docker push sharmasudhanshu/tomcatubuntu    #### push image
+ 
+docker run -d -p 5000:5000 --restart=always --name registry registry:2   ### local repo
+docker push localhost:5000/ubuntu
+#######################################################################################################################################################
+ 
+commit a docker container for testing/cloning /debugging
+Duplicating docker container for debugging
+ 
+ 
+docker start fe2b107eb5c8   ### start the container
+docker attach fe2b107eb5c8   ### attach the container  & press  ctrl p  then ctrl q & come out without stopping container
+docker commit fe2b107eb5c8 apistomcat   #### commit container fe2b107eb5c8  to a new image  apistomcat
+docker run -p 12080:12080 -it apistomcat /bin/bash     #### start a new container
+ 
+ 
+ 
+ 
+##################################################################################################################################################
+docker yaml file
+ 
+ 
+#######################################################################################################################################################
+http://www.dropbit.ch/private-docker-registry-with-nginx-on-centos-7/    docker registry nginx
+ 
+#######################################################################################################################################################
+ 
+$ cat <yourdomain>.crt \
+    COMODORSADomainValidationSecureServerCA.crt \
+    COMODORSAAddTrustCA.crt \
+    AddTrustExternalCARoot.crt \
+    > bundle.csr
+ 
+####################################################################################################################################################
+ 
+local repository ip 10.135.82.121:5000  ,& later on , suppose u r using/pulling/pushing  this on a remote server
+ 
+ 
+mkdir auth
+docker run --entrypoint htpasswd registry -Bbn test test > auth/htpasswd
+docker run -d -p 5000:5000 --restart=always --name registry   -v `pwd`/auth:/auth   -e "REGISTRY_AUTH=htpasswd"   -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm" -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd    registry
+ 
+docker login localhost:5000
+docker push localhost:5000/apitomcatffmpeg
+ 
+ 
+now  access local repo from remote  server , on remote server modify docker
+ 
+ 
+vi  /etc/docker/daemon.json
+{ "insecure-registries":["10.135.82.121:5000"] }
+systemctl stop   docker
+systemctl daemon-reload
+systemctl start   docker
+ 
+docker login http://10.135.82.121:5000
+docker pull  10.135.82.121:5000/apitomcatffmpeg    ### to pull from remote , use local repo ipaddress
+ 
+I get helped from [http://stackoverflow.com/questions/38695515/can-not-pull-push-images-after-update-docker-to-1-12], two steps in total to solve this issue:
+1. Create or modify /etc/docker/daemon.json
+{ "insecure-registries":["myregistry.example.com:5000"] }
+2. Restart docker daemon
+sudo service docker restart
+ 
+ 
+cat  /etc/sysconfig/docker  ## pport 4243  issue , use below config
+ 
+OPTIONS=--selinux-enabled -D -H unix:///var/run/docker.sock -H tcp://0.0.0.0:4243
+ 
+ 
+####################################################################################################################################################
+for Docker Plugin  to talk to Docker host , disable selinux , make below both changes  for enabling port tcp 4243 & open in firewall
+change in files  /etc/systemd/system/docker.service.d/docker.conf  & /etc/sysconfig/docker
+ 
+DOCKER_OPTS="-H tcp://0.0.0.0:4243 -H unix:///var/run/docker.sock"
+ 
+ 
+[root@testub ~]# cat /etc/systemd/system/docker.service.d/docker.conf
+[Service]
+EnvironmentFile=-/etc/sysconfig/docker
+EnvironmentFile=-/etc/sysconfig/docker-storage
+EnvironmentFile=-/etc/sysconfig/docker-network
+ExecStart=
+ExecStart=/usr/bin/dockerd $OPTIONS \
+          $DOCKER_STORAGE_OPTIONS \
+          $DOCKER_NETWORK_OPTIONS \
+          $BLOCK_REGISTRY \
+          $INSECURE_REGISTRY
+ 
+ 
+cat /etc/sysconfig/docker
+OPTIONS=--selinux-enabled -H unix:///var/run/docker.sock -H tcp://0.0.0.0:4243
+ 
+systemctl stop docker
+systemctl daemon-reload
+systemctl start  docker
+ 
+iptables -I INPUT 7  -p tcp -m tcp --dport 4243  -j ACCEPT  ###  ## use higher index value
+ 
+####################################################################################################################################################
+in jenkins  add as below
+DOcker URL ::  tcp://10.135.83.133:4243  ### refer docker opts   in file /etc/sysconfig/docker
+ 
+ 
+ 
+ 
+ 
+ 
+####################################################################################################################################################
+Dockerfile
+ 
+vi  /root/Dockerfile
+ 
+FROM localhost:5000/apitomcatffmpeg
+MAINTAINER Andrew Odewahn "odewahn@oreilly.com"
+RUN echo >/root/hello
+ 
+ADD jenkinscert /home/jenkinscert                               #### relative path , must be present in same dir where Dockerfile  is present
+ 
+WORKDIR /home
+ 
+###### Dockerfile  ends
+docker build -t "simple_flask:dockerfile" .   #### This will create repository by name simple_flask  , TAG by name  dockerfile
+ 
+ 
+######## Now  to run a vm from above image
+ 
+docker run -p 12080:12080 -ti simple_flask:dockerfile  /bin/bash      ## external port 12080 must be free
+ 
+ 
+ 
+After you build with jenkins  try downloading the image
+docker login localhost:5000
+docker run -p 12050:12080 -ti localhost:5000/testnow /bin/bash
+docker run -p 12050:12080 -ti localhost:5000/testnow /bin/bash
+ 
+ 
+on Remote  host
+docker login 10.135.82.121:5000
+docker run -p 12050:12080 -ti 10.135.82.121:5000/testnow /bin/bash
+### now start service inside container on access on port 12050 of vm running this container
+ 
+ 
+ 
+ 
+ 
+to connect to  insecure registry
+ 
+vi  /etc/docker/daemon.json
+{ "insecure-registries":["10.135.82.121:5000"] }
+ 
+ 
+ 
+####################################################################################################################################################
+List repos in a registry
+ 
+curl  -utest:test -X GET http://localhost:5000/v2/_catalog   ### where no certificate is required
+ 
+curl --cacert certs/registry-ca-cert.crt -X GET https://myregistry:5000/v2/_catalog    ###  use username/password also ,along with registry certificates
+ 
+ 
+List all repositories (effectively images):
+ 
+curl --cacert certs/registry-ca-cert.crt -X GET https://myregistry:5000/v2/_catalog
+> {"repositories":["redis","ubuntu"]}
+List all tags for a repository:
+ 
+curl --cacert certs/registry-ca-cert.crt -X GET https://myregistry:5000/v2/ubuntu/tags/list
+> {"name":"ubuntu","tags":["14.04"]}
+ 
+curl -utest:test --cacert  /etc/docker/certs.d/10.140.178.252\:5000/ca.crt  -X GET https://10.140.178.252:5000/v2/_catalog
+ 
+ 
+####################################################################################################################################################
+docker  push  10.135.82.121:5000/java7centos:latest
+The push refers to a repository [10.135.82.121:5000/java7centos]
+834d280cd012: Pushing [==================================================>] 529.2 MB/529.2 MB
+0aeb287b1ba9: Layer already exists
+received unexpected HTTP status: 501 Not Implemented
+ 
+Error :  Layer already exists
+ 
+I've had two images with same tag (which i was pushing to cloud).
+ 
+Solution is:
+ 
+Inspect your images and find two or more with the same tag:
+docker images
+Delete them:
+docker rmi --force 'image id'
+Thats it! Follow steps from my question above.
+ 
+####################################################################################################################################################
+ 
+docker push  10.135.82.121:5000/javacentos77:mytag
+The push refers to a repository [10.135.82.121:5000/javacentos77]
+7bcd98c8980c: Pushing 2.048 kB
+834d280cd012: Pushing [==================================================>] 529.2 MB/529.2 MB
+0aeb287b1ba9: Mounted from java7centos7
+received unexpected HTTP status: 501 Not Implemented
+ 
+ 
+systemctl stop docker
+systemctl start  docker
+docker tag  3606d0988d9f 10.135.82.121:5000/javacentos77:mytag
+ 
+docker push 10.135.82.121:5000/javacentos77:mytag
+The push refers to a repository [10.135.82.121:5000/javacentos77]
+7bcd98c8980c: Pushed
+834d280cd012: Pushed
+0aeb287b1ba9: Layer already exists
+mytag: digest: sha256:03efd7815d6969138c2ac243b46bd350f9cc4184a725ab954eefcdbf559415b3 size: 949
+ 
+curl  -utest:test -X GET http://10.135.82.121:5000/v2/javacentos77/tags/list
+{"name":"javacentos77","tags":["mytag"]}
+ 
+####################################################################################################################################################
+ 
+docker run -p 12080:12080 -v /usrdata/logs/12080:/usrdata/logs/tomcatlogs  -ti 10.135.82.121:5000/devapitomcat:42 /bin/bash
+ 
+###host dir /usrdata/logs/12080 & docker container logs /usrdata/logs/tomcatlogs , now files placed in host will go to container & files placed in container
+will be available in host , through these dir's
+ 
+################################################################################################################################################
+Docker file example
+ 
+cat  /var/lib/jenkins/workspace/cloudbeesdocker/Dockerfile
+FROM 10.135.82.121:5000/apitomcatffmpeg
+MAINTAINER Andrew Odewahn "odewahn@oreilly.com"
+RUN echo "my most recent build job" >/root/hello
+ 
+ADD ACS.jar /usrdata/apps/jiolib/JioLibraries/ACS.jar
+ADD  JioSpringUtilities.jar  /usrdata/apps/jiolib/JioLibraries/JioSpringUtilities.jar
+ADD  ds.jar  /usrdata/apps/appserver/apache-tomcat-7.0.56/lib/ds.jar
+ADD snw.war  /usrdata/apps/appserver/apache-tomcat-7.0.56/webapps/snw.war
+ 
+RUN  chown jersey:servicesusrgroup /usrdata/apps/jiolib/JioLibraries/ACS.jar
+RUN  chown jersey:servicesusrgroup  /usrdata/apps/jiolib/JioLibraries/JioSpringUtilities.jar
+RUN  chown jersey:servicesusrgroup   /usrdata/apps/appserver/apache-tomcat-7.0.56/lib/ds.jar
+RUN  chown jersey:servicesusrgroup    /usrdata/apps/appserver/apache-tomcat-7.0.56/webapps/snw.war
+ 
+ADD  testme  /home/testme
+ADD test  /home/test
+WORKDIR /home
+ 
+#########################################
+FROM 10.135.82.121:5000/apitomcatffmpeg
+MAINTAINER Andrew Odewahn "odewahn@oreilly.com"
+RUN echo "dsjhdsjs" >/root/hello
+ 
+ADD  testme /home/testme
+ 
+WORKDIR /home
+ 
+##########################################################################################################################################
+ 
+docker commit  55e08766f893  testportal
+docker images
+docker tag 701943eea6ac  10.140.225.58:5000/testportal
+docker images
+docker login http://10.140.225.58:5000
+docker push  10.140.225.58:5000/testportal
+ 
+ 
+ 
+####################################################################################################################################################
+ 
+https://www.cloudbees.com/blog/orchestrating-deployments-jenkins-workflow-and-kubernetes
+ 
+########################################################################################################################################
+ 
+docker login http://10.140.225.58:5000
+docker pull 10.140.225.58:5000/testapitomcat:15  ### 15 is the build tag
+ 
+[root@dockerapi ~]# docker pull 10.140.225.58:5000/testapitomcat:15
+15: Pulling from testapitomcat
+8d30e94188e7: Pull complete
+95dcdd52db45: Pull complete
+ef3d74147be1: Pull complete
+c928bf46bb68: Pull complete
+d81488208c56: Pull complete
+54fe48781733: Pull complete
+25c057e8212b: Pull complete
+36d9ae7265aa: Pull complete
+e003b1d0b274: Pull complete
+ec29dbb0b785: Pull complete
+29d399553a29: Pull complete
+59b3d18e41a0: Pull complete
+77a8eff2920a: Pull complete
+ec4d3d8d6e2b: Pull complete
+4d7ea6063399: Pull complete
+Digest: sha256:74fb42898933e6e854eab6641575f888e564d0063db18b1afccde65ae112500a
+Status: Downloaded newer image for 10.140.225.58:5000/testapitomcat:15           ### download complted
+ 
+[root@dockerapi ~]# docker images
+REPOSITORY                         TAG                 IMAGE ID            CREATED             SIZE
+10.140.225.58:5000/testapitomcat   15                  4e513c4cd235        23 minutes ago      3.234 GB
+ 
+ 
+[root@dockerapi ~]# docker run -p 12050:12080 -ti  10.140.225.58:5000/testapitomcat:15  /bin/bash  ### run the image in docker
+[root@b4f23829690f home]# [root@dockerapi ~]#
+[root@dockerapi ~]#
+[root@dockerapi ~]# docker ps
+CONTAINER ID        IMAGE                                 COMMAND             CREATED             STATUS              PORTS                      NAMES
+b4f23829690f        10.140.225.58:5000/testapitomcat:15   "/bin/bash"         14 seconds ago      Up 11 seconds       0.0.0.0:12050->12080/tcp   distracted_almeida
+ 
+ 
+ 
+docker login http://10.140.225.58:5000
+Username (test): test
+Password:
+Login Succeeded
+[root@dockerapi ~]# docker images
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+[root@dockerapi ~]# docker pull 10.140.225.58:5000/testapitomcat:15
+15: Pulling from testapitomcat
+8d30e94188e7: Pull complete
+95dcdd52db45: Extracting [===============================================>   ] 787.1 MB/823.5 MB
+ef3d74147be1: Download complete
+c928bf46bb68: Download complete
+d81488208c56: Download complete
+ 
+ 
+ 
+ 
+docker run -ti 10.140.178.252:5000/centostest /bin/bash               ### will download image 10.140.178.252:5000/centostest not 10.140.178.252:5000/centostest:8
+Unable to find image '10.140.178.252:5000/centostest:latest' locally
+latest: Pulling from centostest
+Digest: sha256:c5422cff3c55265d72568f4285df57afc80d1d97cbe8e49f6e93815be2c88908
+Status: Downloaded newer image for 10.140.178.252:5000/centostest:latest
+ 
+[root@801cdb26eb75 /]#
+[root@801cdb26eb75 /]# [root@dockt /]#
+ 
+ 
+docker run -ti 10.140.178.252:5000/centostest:8 /bin/bash
+ 
+########################################################################################################################################
+ 
+Port 7946 TCP/UDP for container network discovery.
+Port 4789 UDP for the container overlay network.
+ 
+ 
+#####check docker ip address
+docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'  container-id
+### show all container ip's
+docker inspect --format='{{.Name}} - {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -aq)
+ 
+ 
+start docker containers on system reboot & start java processes on launch
+ 
+ 
+docker swarm init --advertise-addr  192.168.20.12
+docker info
+docker node ls
+docker service create --replicas 1 --name helloworld alpine ping docker.com
+docker service inspect helloworld --pretty
+docker service ls
+docker ps
+docker service ps helloworld
+docker service create --replicas 1 --name helloworld alpine ping docker.com
+docker service create --replicas 1 --name helloworldd alpine ping docker.com
+docker service ps helloworldd
+docker service scale helloworld=5
+ 
+docker service create --replicas 1 --name hellocentos  10.140.178.252:5000/centostest:8  ping docker.com
+ 
+#### works well
+docker service create --replicas 3 --name testdwnms  10.140.178.252:5000/downloadmicroservice:9  ping mdownloads.com
+docker service create --replicas 3  --name testdwnms2 --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:9  ping mdownloads.com
+docker service update  --publish-add 12080:12080 testdwnms
+ 
+###final command to launch microservice
+docker service create --replicas 3  --name testdwnms --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:9  /bin/bash /usrdata/apps/download/bin/start.sh
+### with overlay n/w
+ 
+docker service create --replicas 3  --name testdwnms  --network ingress --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:9  /bin/bash /usrdata/apps/download/bin/start.sh
+ 
+ 
+ 
+docker run -p 12080:12080 -ti 10.135.83.139:5000/myimage /bin/bash
+docker exec -it <containerIdOrName> bash
+docker exec -ti 4edceb2930b8 /bin/bash  ### to log in to a running container, launched form the swarm
+ 
+docker service rm helloworld
+docker network create   --driver overlay   --subnet 10.0.9.0/24    --opt encrypted   my-network
+docker logs <containerid>
+ 
+swarm own network & DNS over this n/w
+dns lb
+ 
+ 
+ 
+cat  /root/.docker/config.json  #### each node must have private registry credentials saved
+{
+        "auths": {
+                "10.140.178.252:5000": {
+                        "auth": "dGVzdDp0ZXN0"
+                },
+                "10.140.225.58:5000": {
+                        "auth": "dGVzdDp0ZXN0"
+                }
+        }
+}
+ 
+ 
+service - A service is the definition of the tasks to execute on the worker nodes.
+replicated services model - replicas are created
+global services - the swarm runs one task for the service on every available node in the cluster
+A task carries a Docker container and the commands to run inside the container. It is the atomic scheduling unit of swarm.
+ 
+LB
+The swarm manager uses ingress load balancing to expose the services
+PublishedPort
+Swarm mode has an internal DNS component that automatically assigns each service in the swarm a DNS entry.
+The swarm manager uses internal load balancing to distribute requests among services within the cluster based upon the DNS name of the service.
+ 
+ 
+Manage sensitive data with Docker secrets
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+#######################################################################################
+ 
+ 
+####overlay  n/w
+ 
+docker network rm my-network  ### remove extra overlay n/w's in any , unwanted n/w
+docker network rm ingress  #### ingress is a pre-defined n/w cant removed
+docker network ls
+docker network create   --driver overlay   --subnet 10.0.9.0/24    --opt encrypted   my-network
+docker network create   --driver overlay   --subnet 10.0.10.0/24    --opt encrypted   proxy
+docker network ls
+docker service create --replicas 3  --name testdwnms  --network my-network  --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:9  /bin/bash /usrdata/apps/download/bin/start.sh
+docker ps
+docker exec -it 10fae4402e7d  bash  ### loging to one of the container
+###inside container
+yum install bind-utils -y  ### install bind-utils
+####now inside container nslookup the service names, with output as below
+ 
+nslookup  testdwnms
+Server:         127.0.0.11
+Address:        127.0.0.11#53
+ 
+Non-authoritative answer:
+Name:   testdwnms
+Address: 10.0.9.2
+ 
+[root@10fae4402e7d /]# nslookup tasks.testdwnms
+Server:         127.0.0.11
+Address:        127.0.0.11#53
+ 
+Non-authoritative answer:
+Name:   tasks.testdwnms
+Address: 10.0.9.4
+Name:   tasks.testdwnms
+Address: 10.0.9.3
+Name:   tasks.testdwnms
+Address: 10.0.9.5
+ 
+ 
+ 
+ 
+ 
+ 
+#################################################################################################################################
+docker network create   --driver overlay   --subnet 10.0.9.0/24    --opt encrypted   my-network
+docker network create   --driver overlay   --subnet 10.0.10.0/24    --opt encrypted   proxy
+docker network ls
+docker pull vfarcic/docker-flow-proxy
+docker service create --name haproxy  --replicas 2   -p 80:80     -p 443:443     -p 8080:8080     --network proxy     -e MODE=swarm     vfarcic/docker-flow-proxy
+docker service create --replicas 3  --name testdwnms  --network my-network  --network proxy  --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:9  /bin/bash /usrdata/apps/download/bin/start.sh
+curl "10.140.179.47:8080/v1/docker-flow-proxy/reconfigure?serviceName=testdwnms&servicePath=/snw&port=12080"  ###not working
+ 
+curl "192.168.20.12:8080/v1/docker-flow-proxy/reconfigure?serviceName=testdwnms&servicePath=/snw/app/&port=80"  ### execute it on private ip ,as floating ip hangs
+###not working
+ 
+https://www.katacoda.com/courses/docker-orchestration/load-balance-service-discovery-swarm-mode
+https://www.katacoda.com/courses/docker-orchestration
+ 
+ 
+##################################################################################################################################################
+ 
+ 
+docker swarm
+###If you don’t have the command available, you can run the following command on a manager node to retrieve the join command for a worker:
+ 
+ 
+ 
+docker swarm join     --token SWMTKN-1-55sx3xi15r3axjk5e0xrwr9mg6w717rhqynvyn3ndba00i78pk-1ycvz7o9xedj427bkf92o9l3x     192.168.20.12:2377
+This node joined a swarm as a worker.
+ 
+ 
+docker service create --replicas 3  --name testdwnms  --network ingress   --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:9  /bin/bash /usrdata/apps/download/bin/start.sh
+###################################################################################################################################################
+docker service create --replicas 3  --name testdwnms  --network ingress   --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:9  /bin/bash /usrdata/apps/download/bin/start.sh
+### to check issues in swarm service across all nodes
+docker service ps dwnms
+ 
+docker service create --with-registry-auth , --registry-auth
+ 
+for  swarm connetcions to work , open port 4243 in docker properties
+/usr/bin/dockerd --selinux-enabled -H unix:///var/run/docker.sock -H tcp://0.0.0.0:4243
+ 
+/etc/systemd/system/docker.service.d/docker.conf  & /etc/sysconfig/docker
+ 
+systemctl daemon-reload
+ 
+systemctl restart  docker
+######################################################################################################################################################################
+swarm manager node ports
+[root@manager1 ~]# firewall-cmd --list-all
+public (active)
+  target: default
+  icmp-block-inversion: no
+  interfaces: docker0 eth0
+  sources:
+  services: dhcpv6-client ssh
+  ports: 443/tcp 80/tcp 2377/tcp 4243/tcp 8080/tcp 12080/tcp
+  protocols:
+  masquerade: no
+  forward-ports:
+  sourceports:
+  icmp-blocks:
+  rich rules:
+ 
+swarm worker node ports
+[root@dockerimg ~]# firewall-cmd --list-all
+public (active)
+  target: default
+ icmp-block-inversion: no
+  interfaces: eth0
+  sources:
+  services: dhcpv6-client ssh
+  ports: 4243/tcp 443/tcp 80/tcp 8080/tcp 12080/tcp
+  protocols:
+  masquerade: no
+  forward-ports:
+  sourceports:
+  icmp-blocks:
+  rich rules:
+ 
+###############################################################################################################################################
+ 
+While the official docker hub can be easily browsed from the web, the open source docker registry lacks this functionality. As there is currently no tool replacing this functionality, we created our own: docker-ls. This tool allows you to browse the contents of a docker registry on the CLI and supports authentication both via basic and via token-based auth. Some short examples:
+ 
+List all repositories:
+ 
+ 
+docker-ls repositories --registry https://docker.foo.bar.com \
+   --user <username> --password <password>
+1
+2
+docker-ls repositories --registry https://docker.foo.bar.com \
+   --user <username> --password <password>
+List all repositories, including tags:
+ 
+ 
+docker-ls repositories --registry https://docker.foo.bar.com \
+   --user <username> --password <password> --level 1
+1
+2
+docker-ls repositories --registry https://docker.foo.bar.com \
+   --user <username> --password <password> --level 1
+List all tags in a repository, including content digests:
+ 
+ 
+docker-ls tags --registry https://docker.foo.bar.com \
+   --user <username> --password <password> --level 1 some/repository
+1
+2
+docker-ls tags --registry https://docker.foo.bar.com \
+   --user <username> --password <password> --level 1 some/repository
+Show manifest for a single tag
+ 
+show manifest for a single tagShell
+ 
+docker-ls tag --registry https://docker.foo.bar.com \
+   --user <username> --password <password> --level 1 --raw-manifest some/repository
+1
+2
+docker-ls tag --registry https://docker.foo.bar.com \
+   --user <username> --password <password> --level 1 --raw-manifest some/repository
+#############################################################################################################################################
+Failed to join memberlist
+Passing --listen-addr fixes the problem.
+ 
+###############################################################################################################################
+ 
+journalctl -u docker.service
+ 
+##################################################################################################################################
+[root@manager1 ~]# docker login 10.140.178.252:5000
+Username (test): test
+Password:
+Login Succeeded
+######### no sudo in below command ,
+[root@manager1 ~]#  docker service create --replicas 8  --name testdwnms   --with-registry-auth  --network ingress   --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:24  /bin/bash /usrdata/apps/download/bin/start.sh
+ekethql5lasowh4jp6mzz9m0r
+[root@manager1 ~]# docker service ls
+ 
+#######donot use sudo in service create command ,
+docker service create --replicas 8  --name testdwnms   --with-registry-auth  --network ingress   --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:25  /bin/bash /usrdata/apps/download/bin/start.sh
+7f1mmxgjosn43ngvo07lsotrj
+[root@manager1 ~]# docker service ls
+ID                  NAME                MODE                REPLICAS            IMAGE
+7f1mmxgjosn4        testdwnms           replicated          8/8                 10.140.178.252:5000/downloadmicroservice:25
+[root@manager1 ~]# docker service ps  testdwnms
+ID                  NAME                IMAGE                                         NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+fszsp5uhi8m8        testdwnms.1         10.140.178.252:5000/downloadmicroservice:25   dockd               Running             Running 36 seconds ago
+u2418rmsr5nd        testdwnms.2         10.140.178.252:5000/downloadmicroservice:25   dockerimg           Running             Running 38 seconds ago
+ejyhyfbexqdc        testdwnms.3         10.140.178.252:5000/downloadmicroservice:25   dockr               Running             Running 24 seconds ago
+ligu4cu0e2mt        testdwnms.4         10.140.178.252:5000/downloadmicroservice:25   dockd               Running             Running 33 seconds ago
+p57nn4uixqem        testdwnms.5         10.140.178.252:5000/downloadmicroservice:25   dockerimg           Running             Running 38 seconds ago
+9jza09zvvlt5        testdwnms.6         10.140.178.252:5000/downloadmicroservice:25   dockr               Running             Running 24 seconds ago
+0ot60h6ca39y        testdwnms.7         10.140.178.252:5000/downloadmicroservice:25   dockerimg           Running             Running 38 seconds ago
+0v66bq0r0qdz        testdwnms.8         10.140.178.252:5000/downloadmicroservice:25   dockr               Running             Running 24 seconds ago
+[root@manager1 ~]#
+ 
+### for rolling updates service name testdwnms , it will take 3-4 mins to finish the task
+docker service create --replicas 8  --name testdwnms  --update-delay 10s   --with-registry-auth  --network ingress   --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:25  /bin/bash /usrdata/apps/download/bin/start.sh
+docker service update testdwnms --image 10.140.178.252:5000/downloadmicroservice:26
+ 
+ 
+##################################################################################################################################
+ 
+port 4243 is mandatory,
+docker node update --availability drain worker1
+docker node inspect --pretty worker1
+docker service inspect --pretty helloworld
+docker service ps helloworld
+docker service scale helloworld=5
+docker service rm helloworld
+docker service create   --replicas 3   --name redis   --update-delay 10s   redis:3.0.6
+docker service update --image redis:3.0.7 redis
+docker service update --image   10.140.178.252:5000/downloadmicroservice:29 testdwnms
+docker service inspect --pretty redis
+To restart a paused update run docker service update <SERVICE-ID>
+docker service ps <SERVICE-ID> to watch the rolling update
+docker node update --availability drain worker1  #DRAIN availability prevents a node from receiving new tasks from the swarm manager. It also means the manager stops tasks running on the node and launches replica tasks on a node with ACTIVE availability.
+docker node inspect --pretty worker1
+###check this
+When you access the HAProxy load balancer on port 80, it forwards requests to nodes in the swarm. The swarm routing mesh routes the request to an active task. If, for any reason the swarm scheduler dispatches tasks to different nodes, you don’t need to reconfigure the load balancer.
+ 
+docker machine  ### to run docker swarm
+ 
+--mount type=volume,src=test,dst=/data  ### check for volumes & data logs from various containers
+ 
+##maintaining logs of the same type of containers with the different container ID can be slightly difficult, so it’s better to provide some label or tag to a running container.
+##Logging using data volumes - single logging  dir for all same type of containers , with tag names
+##Logging using Docker logging driver
+ 
+docker service create --replicas 8  --name testdwnms  --update-delay 10s   --with-registry-auth  --network ingress   --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:28  /bin/bash /usrdata/apps/download/bin/start.sh
+ 
+docker update :: change cpu,ram limits, change/add/delete env var inside container
+ 
+ 
+####################################################################################################################################
+ 
+firewall-cmd --permanent --zone=public --add-port=12080/tcp
+firewall-cmd --permanent --zone=public --add-port=4243/tcp
+firewall-cmd --permanent --zone=public --add-port=80/tcp
+firewall-cmd --reload
+ 
+ 
+cat /etc/yum.repos.d/docker.repo
+[dockerrepo]
+name=Docker Repository
+baseurl=https://yum.dockerproject.org/repo/main/centos/7
+enabled=1
+gpgcheck=1
+gpgkey=https://yum.dockerproject.org/gpg
+ 
+cat /etc/yum.conf
+http_caching=none
+ 
+export http_proxy="http://10.140.177.48:8678"
+export https_proxy="http://10.140.177.48:8678"
+ 
+yum install docker-engine  -y
+ 
+mkdir /etc/systemd/system/docker.service.d/
+cat /etc/systemd/system/docker.service.d/docker.conf
+[Service]
+EnvironmentFile=-/etc/sysconfig/docker
+EnvironmentFile=-/etc/sysconfig/docker-storage
+EnvironmentFile=-/etc/sysconfig/docker-network
+ExecStart=
+ExecStart=/usr/bin/dockerd $OPTIONS \
+          $DOCKER_STORAGE_OPTIONS \
+          $DOCKER_NETWORK_OPTIONS \
+          $BLOCK_REGISTRY \
+          $INSECURE_REGISTRY
+ 
+change in files  /etc/systemd/system/docker.service.d/docker.conf  & /etc/sysconfig/docker
+cat  /etc/sysconfig/docker
+DOCKER_OPTS="-H tcp://0.0.0.0:4243 -H unix:///var/run/docker.sock"
+ 
+systemctl stop docker
+systemctl daemon-reload
+systemctl start  docker
+ 
+yum install telnet -y
+telnet  192.168.20.12 2377
+add registry certs
+mkdir /etc/docker/certs.d/
+mkdir /etc/docker/certs.d/10.140.178.252\:5000
+cd /etc/docker/certs.d/10.140.178.252\:5000
+vi ca.crt  ## add certificate
+docker login  10.140.178.252:5000  ### login to registry & succeed
+Username: test
+Password:
+Login Succeeded
+ 
+This will save credentials in file /root/.docker/config.json
+{
+        "auths": {
+                "10.140.178.252:5000": {
+                        "auth": "dGVzdDp0ZXN0"
+                }
+        }
+}
+ 
+ 
+ 
+ 
+docker swarm join     --token SWMTKN-1-55sx3xi15r3axjk5e0xrwr9mg6w717rhqynvyn3ndba00i78pk-1ycvz7o9xedj427bkf92o9l3x     192.168.20.12:2377
+##This node joined a swarm as a worker.
+ 
+now check in swarm manager node , you will see new node with name docks (hostname is docks)
+docker node ls
+ID                           HOSTNAME   STATUS  AVAILABILITY  MANAGER STATUS
+ijt0ofbbcqvgrxdidbv0pz6hx *  manager1   Ready   Drain         Leader
+n1t83ca38zize11p7uxol94g5    dockr      Ready   Active
+txvcgztnmv074c4mavgj34o2n    docks      Ready   Active
+xe8jc5dcusx02gy0rq5hbp0wk    dockd      Ready   Active
+zde6kus41p9cypva2a6blpqk7    dockerimg  Ready   Active
+ 
+##now stop the service testdwnms & start it again
+### use update options --update-delay=10s --update-parallelism=1 ,for one at a time update
+ 
+docker service create --replicas 8  --name testdwnms  --update-delay 10s   --update-parallelism=1  --with-registry-auth  --network ingress   --publish 12080:12080  10.140.178.252:5000/downloadmicroservice:28  /bin/bash /usrdata/apps/download/bin/start.sh
+ 
+ 
+docker service inspect  testdwnms  --pretty
+ 
+ 
+ 
+################################################################################################################
+ 
+ 
+Based on Docker Host & Container Overviewby by uschtwill (https://grafana.net/dashboards/395).
+ 
+If you are interested on deploy the full monitoring stack you can use the next commands:
+ 
+docker \
+  network create --driver overlay monitoring
+ 
+docker \
+  service create --name cadvisor \
+  --mode global \
+  --network monitoring \
+  --label com.docker.stack.namespace=monitoring \ 
+  --container-label com.docker.stack.namespace=monitoring \
+  --mount type=bind,src=/,dst=/rootfs:ro \
+  --mount type=bind,src=/var/run,dst=/var/run:rw \
+  --mount type=bind,src=/sys,dst=/sys:ro \
+  --mount type=bind,src=/var/lib/docker/,dst=/var/lib/docker:ro \
+  google/cadvisor:v0.24.1
+ 
+docker \
+  service create --name node-exporter \
+  --mode global \
+  --network monitoring \
+  --label com.docker.stack.namespace=monitoring \
+  --container-label com.docker.stack.namespace=monitoring \
+  --mount type=bind,source=/proc,target=/host/proc \
+  --mount type=bind,source=/sys,target=/host/sys \
+  --mount type=bind,source=/,target=/rootfs \
+  --mount type=bind,source=/etc/hostname,target=/etc/host_hostname \
+  -e HOST_HOSTNAME=/etc/host_hostname \
+  basi/node-exporter:v0.1.1 \
+  -collector.procfs /host/proc \
+...
